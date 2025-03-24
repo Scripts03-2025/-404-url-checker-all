@@ -1,0 +1,80 @@
+/**
+ * Version: v3.7-fix-A1
+ * Функционал:
+ * - Проверяет по 30 непустых URL из столбца B, начиная с сохранённой позиции (хранится в ячейке A1)
+ * - После каждой проверки сохраняет новую стартовую позицию в A1 (только на реально пройденные строки)
+ * - Логирует HTTP-код в D, время — в E
+ * - Формат времени: ЧЧ:ММ:СС / ДД.ММ.ГГГГ
+ * - Зелёный фон для 200, красный — для всего остального
+ * - Добавляет метку 'timeout' в ячейку, если не удалось получить ответ за 10 секунд
+ * - Работает корректно по триггеру (жёсткая привязка к таблице и листу)
+ */
+
+function checkUrls() {
+  const ss = SpreadsheetApp.openById("1n3InvbH_nTghhPWpNUA6T0hSafVSlgW2XVmuL88EW1g");
+  const sheet = ss.getSheetByName("404 (не менять!)");
+  const urlColumn = 2; // B
+  const statusColumn = 4; // D
+  const timeColumn = 5; // E
+
+  const maxRowsToCheck = 1000; // запас
+  const targetUrlCount = 30;
+
+  let currentRow = parseInt(sheet.getRange("A1").getValue(), 10);
+  if (isNaN(currentRow) || currentRow < 7) currentRow = 7;
+
+  const urlRange = sheet.getRange(currentRow, urlColumn, maxRowsToCheck, 1).getValues();
+  let processed = 0;
+  let scannedRows = 0;
+  const now = new Date();
+  const formattedNow = formatDate(now);
+
+  for (let i = 0; i < urlRange.length && processed < targetUrlCount; i++) {
+    scannedRows++;
+    const url = urlRange[i][0];
+    if (!url) continue;
+
+    let code = '';
+    try {
+      const response = UrlFetchApp.fetch(url, {
+        muteHttpExceptions: true,
+        timeout: 10 * 1000
+      });
+      code = response.getResponseCode();
+    } catch (e) {
+      if (e.message && e.message.includes("Exception: Request failed for")) {
+        code = 'timeout';
+      } else {
+        code = 'error';
+      }
+    }
+
+    const row = currentRow + i;
+    const statusCell = sheet.getRange(row, statusColumn);
+    const timeCell = sheet.getRange(row, timeColumn);
+
+    statusCell.setValue(code);
+    timeCell.setValue(formattedNow);
+
+    if (code === 200) {
+      statusCell.setBackground('#b6fcb6');
+    } else {
+      statusCell.setBackground('#fcb6b6');
+    }
+
+    processed++;
+  }
+
+  sheet.getRange("A1").setValue(currentRow + scannedRows);
+}
+
+function formatDate(date) {
+  const pad = n => n.toString().padStart(2, '0');
+  const hours = pad(date.getHours());
+  const minutes = pad(date.getMinutes());
+  const seconds = pad(date.getSeconds());
+  const day = pad(date.getDate());
+  const month = pad(date.getMonth() + 1);
+  const year = date.getFullYear();
+  return `${hours}:${minutes}:${seconds} / ${day}.${month}.${year}`;
+}
