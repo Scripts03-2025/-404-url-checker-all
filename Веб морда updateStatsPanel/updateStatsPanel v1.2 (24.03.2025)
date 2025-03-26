@@ -1,0 +1,51 @@
+/**
+ * updateStatsPanel v1.2 (24.03.2025)
+ * 
+ * 📊 Функция статистики по результатам проверки ссылок
+ * 
+ * Что делает:
+ * - Считает общее количество кодов (проверенных текстов)
+ * - Подсчитывает сколько среди них 404, 403 и 503
+ * - Определяет дату последней проверки из колонки E
+ * - Выводит всё это в ячейки H1–H5 на листе "404 (не менять!)"
+ * - Раскрашивает строки: H2 — красная (404), H3/H4 — жёлтая (403 и 503)
+ * - Считает количество публикаций по сайтам и выводит в колонку J
+ * 
+ * История версий:
+ * v1.0 – 24.03.2025 – базовая реализация статистики (всего, 404, 403, дата)
+ * v1.1 – 24.03.2025 – добавлен подсчёт 503, раскраска ячеек H2–H4
+ * v1.2 – 24.03.2025 – добавлен подсчёт публикаций по сайтам VC, Habr, Пикабу, DTF, tproger, Spark (колонка J)
+ */
+
+function updateStatsPanel() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("404 (не менять!)");
+  const codes = sheet.getRange("D7:D").getValues().flat().filter(Boolean);
+
+  const total = codes.length;
+  const count404 = codes.filter(c => String(c) === "404").length;
+  const count403 = codes.filter(c => String(c) === "403").length;
+  const count503 = codes.filter(c => String(c) === "503").length;
+  const lastDate = sheet.getRange("E7:E").getValues().flat().filter(Boolean).pop();
+
+  sheet.getRange("H1").setValue(`Всего текстов: ${total}`).setBackground(null);
+  sheet.getRange("H2").setValue(`404 ошибок: ${count404}`).setBackground("#f4cccc");
+  sheet.getRange("H3").setValue(`403 ошибок: ${count403}`).setBackground("#fff2cc");
+  sheet.getRange("H4").setValue(`503 ошибок: ${count503}`).setBackground("#fff2cc");
+  sheet.getRange("H5").setValue(`Последняя проверка: ${lastDate || "-"}`).setBackground(null);
+
+  // === Подсчёт публикаций по сайтам ===
+  const urls = sheet.getRange("B7:B").getValues().flat().filter(Boolean);
+  const counters = {
+    "VC": urls.filter(u => u.includes("vc.ru")).length,
+    "Habr": urls.filter(u => u.includes("habr.com")).length,
+    "Пикабу": urls.filter(u => u.includes("pikabu.ru")).length,
+    "DTF": urls.filter(u => u.includes("dtf.ru")).length,
+    "tproger": urls.filter(u => u.includes("tproger.ru")).length,
+    "Spark": urls.filter(u => u.includes("spark-interfax.ru")).length
+  };
+
+  const sites = ["VC", "Habr", "Пикабу", "DTF", "tproger", "Spark"];
+  sites.forEach((name, i) => {
+    sheet.getRange(1 + i, 10).setValue(`${name}: ${counters[name] || 0}`);
+  });
+}
