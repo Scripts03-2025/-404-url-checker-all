@@ -1,0 +1,129 @@
+/**
+ * 📨 Telegram Notification Script
+ * ------------------------------------
+ * 📛 Версия: v1.3.2 — Автор в сообщении ("Кто разместил")
+ * 
+ * Проверяет Google Таблицу во вкладке "404 (не менять!)" начиная с 7-й строки.
+ * Если в колонке B найдена новая ссылка (без пометки в колонке C),
+ * то отправляет сообщение в Telegram и записывает пометку вида:
+ * "Отправлено 25.03.2025 16:00" в колонку C.
+ * Работает с триггером каждые 4 часа.
+ * Логирует каждый запуск скрипта во вкладку "Лог скриптов" от столбца M (7-я строка),
+ * при этом новые записи вставляются на 7-ю строку, а все старые сдвигаются вниз.
+ * 
+ * 🔄 Версии:
+ * v1.0.0 — Базовая реализация (отправка новых ссылок и пометка времени)
+ * v1.1.0 — Добавлено описание и лог версий (25.03.2025)
+ * v1.2.0 — Добавлена функция для ручной установки триггера (25.03.2025)
+ * v1.3.0 — Добавлено логирование запуска в таблицу (26.03.2025)
+ * v1.3.1 — Лог пишется на 7-ю строку, а существующие строки сдвигаются вниз (26.03.2025)
+ * v1.3.2 — Добавлено имя (первая буква из колонки F) в сообщение Telegram (27.03.2025)
+ * 
+ * 💬 Сделано в ChatGPT: https://chatgpt.com/c/67e2e09a-1b20-8010-8992-ecfebfcfe5c0
+ */
+
+const TELEGRAM_TOKEN = '8136586676:AAHvXeM4ih9ECPdSwzGM5P0O1p2_GYb_iTk';
+const TELEGRAM_CHAT_ID = '8003377702'; // ← твой chat_id
+
+function checkNewLinksAndNotify() {
+  const sheetName = '404 (не менять!)';
+  const linkColumn = 2; // колонка B
+  const statusColumn = 3; // колонка C
+
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+  const data = sheet.getRange(7, 1, sheet.getLastRow() - 6, 6).getValues(); // колонки A–F начиная с 7-й строки
+  const statuses = sheet.getRange(7, statusColumn, data.length).getValues();
+
+  let processedCount = 0;
+  let errors = [];
+
+  for (let i = 0; i < data.length; i++) {
+    const url = data[i][1]; // колонка B
+    const status = statuses[i][0];
+    const rawAuthor = data[i][5]; // колонка F
+    const authorInitial = rawAuthor ? rawAuthor.trim().charAt(0).toUpperCase() + '.' : 'Не указан';
+
+    if (url && !status) {
+      const message = `📰 Новый текст размещён:\n${url}\n\n👤 Кто разместил: ${authorInitial}`;
+      const result = sendTelegramMessage(message);
+
+      const now = new Date();
+      const formattedTime = Utilities.formatDate(now, Session.getScriptTimeZone(), 'dd.MM.yyyy HH:mm');
+      const statusMessage = `Отправлено ${formattedTime}`;
+
+      if (result.success) {
+        sheet.getRange(i + 7, statusColumn).setValue(statusMessage); // Пишем в C
+        processedCount++;
+      } else {
+        errors.push(result.error);
+      }
+
+      SpreadsheetApp.flush();
+    }
+  }
+
+  logScriptRun(processedCount, errors);
+}
+
+function sendTelegramMessage(message) {
+  const url = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`;
+  const payload = {
+    chat_id: TELEGRAM_CHAT_ID,
+    text: message,
+    parse_mode: 'Markdown'
+  };
+
+  const options = {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true,
+  };
+
+  try {
+    const response = UrlFetchApp.fetch(url, options);
+    const code = response.getResponseCode();
+    if (code >= 200 && code < 300) {
+      return { success: true };
+    } else {
+      return { success: false, error: `Код ответа Telegram: ${code}` };
+    }
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
+function logScriptRun(processedCount, errors) {
+  const logSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Лог скриптов');
+  const now = new Date();
+  const date = Utilities.formatDate(now, Session.getScriptTimeZone(), 'dd.MM.yyyy');
+  const time = Utilities.formatDate(now, Session.getScriptTimeZone(), 'HH:mm:ss');
+
+  const newRow = [[
+    date,                                 // M — дата
+    time,                                 // N — время
+    errors.length === 0 ? '✅ Успешно' : '⚠️ С ошибками', // O — статус скрипта
+    processedCount > 0 ? `📤 Отправлено: ${processedCount}` : '📭 Нет новых ссылок', // P — сообщение
+    errors.join('; ') || ''               // Q — ошибки
+  ]];
+
+  const rangeToMove = logSheet.getRange(7, 13, logSheet.getLastRow() - 6, newRow[0].length);
+  rangeToMove.moveTo(logSheet.getRange(8, 13)); // сдвигаем всё вниз начиная с 8 строки
+  logSheet.getRange(7, 13, 1, newRow[0].length).setValues(newRow); // пишем в 7 строку
+}
+
+
+/**
+ * 📄 Справка по версии v1.3.2:
+ * 
+ * Скрипт ищет новые ссылки в колонке B (начиная с 7-й строки) листа "404 (не менять!)".
+ * Если в колонке C рядом со ссылкой нет отметки — скрипт отправляет ссылку в Telegram.
+ * Дополнительно в сообщение добавляется, кто разместил ссылку (первая буква из колонки F).
+ * Пример сообщения:
+ *   📰 Новый текст размещён:
+ *   https://example.com
+ *   
+ *   👤 Кто разместил: А.
+ * После отправки в колонку C записывается дата и время.
+ * Каждый запуск логируется во вкладку "Лог скриптов" (в строку 7, от колонки M).
+ */
