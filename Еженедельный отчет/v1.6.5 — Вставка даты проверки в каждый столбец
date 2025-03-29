@@ -1,0 +1,158 @@
+/**
+ * Скрипт: updateWeeklyStats_All
+ * Источник: https://chatgpt.com/c/67e6c8e4-bbc8-8010-a819-2d00335dd323
+ *
+ * 📌 Версии:
+ * v1.6.5 — Вставка даты проверки в каждый столбец
+ * v1.6.4 — Обновление последних 5 недель + вставка новой недели при необходимости
+ * v1.6.3 — Вставка сразу всех нужных недель, сдвиг столбцов
+ * v1.6.2 — Оптимизация: меньше get/set, ускорение
+ * v1.6.1 — Подсветка недель при переходе месяца
+ * v1.6.0 — Поддержка параметров "В Топ-10..." и логика "нет инфы"
+ */
+
+function updateWeeklyStats_All() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sourceSheet = ss.getSheetByName("Ниши 2.0");
+  const statSheet = ss.getSheetByName("s5 Стата");
+  const timezone = ss.getSpreadsheetTimeZone();
+
+  const standardParams = [
+    { name: "Опубликовано", column: "H" },
+    { name: "Написано", column: "AG" },
+    { name: "Запущено в работу", column: "D" }
+  ];
+
+  const top10Params = [
+    { name: "В Топ-10 яндекса", column: "K" },
+    { name: "В Топ-10 яндекса через 2 недели", column: "L" },
+    { name: "В Топ-10 Google через месяц", column: "M" }
+  ];
+
+  const paramStartRow = 8;
+  const lastRow = statSheet.getLastRow();
+  const paramNames = statSheet.getRange(paramStartRow, 2, lastRow - paramStartRow + 1).getValues().flat();
+  const today = new Date();
+
+  const getWeekStart = (date) => {
+    const d = new Date(date);
+    d.setDate(d.getDate() - d.getDay() + 1);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  };
+  const formatDateShort = date => Utilities.formatDate(date, timezone, "dd");
+  const formatDateFull = date => Utilities.formatDate(date, timezone, "dd.MM.yy");
+  const formatDateTime = date => Utilities.formatDate(date, timezone, "dd.MM.yyyy HH:mm");
+
+  const getWeekLabel = (startDate) => {
+    const endDate = new Date(startDate);
+    endDate.setDate(startDate.getDate() + 6);
+    return `${formatDateShort(startDate)}–${formatDateFull(endDate)}`;
+  };
+
+  const applyWeekStyle = (cellRange, startDate) => {
+    cellRange.setFontWeight("bold");
+    const endDate = new Date(startDate);
+    endDate.setDate(startDate.getDate() + 6);
+    if (startDate.getMonth() !== endDate.getMonth()) {
+      cellRange.setBackground("#b6d7a8");
+    } else {
+      cellRange.setBackground(null);
+    }
+  };
+
+  const currentWeekStart = getWeekStart(today);
+  const currentLabel = getWeekLabel(currentWeekStart);
+  const headers = statSheet.getRange(7, 3, 1, statSheet.getLastColumn()).getValues()[0];
+
+  const currentLabelCol = headers.indexOf(currentLabel);
+  if (currentLabelCol === -1) {
+    statSheet.insertColumnBefore(3);
+    const headerCell = statSheet.getRange(7, 3);
+    headerCell.setValue(currentLabel);
+    applyWeekStyle(headerCell, currentWeekStart);
+  }
+
+  const sourceData = sourceSheet.getDataRange().getValues();
+  const maxWeeksToUpdate = 5;
+  const headerRange = statSheet.getRange(7, 3, 1, statSheet.getLastColumn() - 2).getValues()[0];
+
+  const checkRowIndex = paramNames.findIndex(name => name === "Дата проверки");
+  const checkRow = checkRowIndex !== -1 ? paramStartRow + checkRowIndex : null;
+
+  for (let i = 0; i < Math.min(maxWeeksToUpdate, headerRange.length); i++) {
+    const label = headerRange[i];
+    if (!label || typeof label !== 'string' || !label.includes("–")) continue;
+    const parts = label.split("–");
+    const startDay = parseInt(parts[0], 10);
+    const endPart = parts[1];
+    const [endDay, endMonth, endYear] = endPart.split(".").map(x => parseInt(x, 10));
+    const weekStart = new Date(endYear + 2000, endMonth - 1, startDay);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+    const col = 3 + i;
+
+    [...standardParams, ...top10Params].forEach(param => {
+      const rowIndex = paramNames.findIndex(name => name === param.name);
+      if (rowIndex === -1) return;
+      const row = paramStartRow + rowIndex;
+      let count = 0;
+
+      for (let r = 1; r < sourceData.length; r++) {
+        const line = sourceData[r];
+        const rawValue = line[getColIndex(param.column)];
+        let compareDate = line[getColIndex("H")];
+
+        if (standardParams.some(p => p.name === param.name)) {
+          compareDate = rawValue;
+          if (!(compareDate instanceof Date)) continue;
+        } else {
+          if (rawValue !== 1 && rawValue !== "1") continue;
+          if (!(compareDate instanceof Date)) continue;
+        }
+
+        const d = new Date(compareDate);
+        d.setHours(0, 0, 0, 0);
+        if (d >= weekStart && d <= weekEnd) {
+          count++;
+        }
+      }
+
+      const value = (top10Params.some(p => p.name === param.name) && count === 0) ? "нет инфы" : count;
+      statSheet.getRange(row, col).setValue(value);
+    });
+
+    // Вставка даты проверки в соответствующий столбец
+    if (checkRow) {
+      statSheet.getRange(checkRow, col).setValue(formatDateTime(today));
+    }
+  }
+
+  function getColIndex(colLetter) {
+    return colLetter.charCodeAt(0) - 65;
+  }
+
+  /**
+   * 📘 Справка по работе скрипта updateWeeklyStats_All:
+   *
+   * ▸ Скрипт работает с двумя листами:
+   *   - "Ниши 2.0" — источник данных
+   *   - "s5 Стата" — таблица со статистикой
+   *
+   * ▸ Параметры:
+   *   - "Опубликовано", "Написано", "Запущено в работу" — берутся по датам
+   *   - "В Топ-10..." — считаются, если в ячейке столбца K/L/M стоит 1, и дата публикации входит в нужную неделю
+   *
+   * ▸ Логика обновления:
+   *   - Если свежая неделя ещё не создана — вставляется в столбец C, остальные сдвигаются
+   *   - Всегда обновляются данные за последние 5 недель
+   *   - Значение считается по дате: если дата попадает в диапазон недели, считается в отчёт
+   *
+   * ▸ Формат недели:
+   *   - Ячейка в строке 7 (заголовок) имеет формат: 01–07.03.25
+   *   - Если неделя начинается в одном месяце, а заканчивается в другом — подсвечивается зелёным
+   *
+   * ▸ Дополнительно:
+   *   - В строку "Дата проверки" в каждую проверенную колонку пишется дата и время обновления в формате "дд.ММ.гггг чч:мм"
+   */
+}
