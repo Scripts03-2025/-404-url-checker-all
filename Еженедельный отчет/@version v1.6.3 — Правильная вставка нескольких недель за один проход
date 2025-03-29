@@ -1,0 +1,125 @@
+/**
+ * Скрипт: updateWeeklyStats_All
+ * Источник: https://chatgpt.com/c/67e6c8e4-bbc8-8010-a819-2d00335dd323
+ * @version v1.6.3 — Правильная вставка нескольких недель за один проход
+ * РАБОТАЕТ ПРОВЕРЕНО
+ * 🔄 Лог изменений:
+ * v1.6.3 (2025-03-28)
+ * - Вставка столбцов вперёд сразу на все недели, сдвиг значений вправо
+ * - Данные пишутся в нужный столбец в зависимости от итерации
+ */
+
+function updateWeeklyStats_All() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sourceSheet = ss.getSheetByName("Ниши 2.0");
+  const statSheet = ss.getSheetByName("s5 Стата");
+  const timezone = ss.getSpreadsheetTimeZone();
+
+  const standardParams = [
+    { name: "Опубликовано", column: "H" },
+    { name: "Написано", column: "AG" },
+    { name: "Запущено в работу", column: "D" }
+  ];
+
+  const top10Params = [
+    { name: "В Топ-10 яндекса", column: "K" },
+    { name: "В Топ-10 яндекса через 2 недели", column: "L" },
+    { name: "В Топ-10 Google через месяц", column: "M" }
+  ];
+
+  const paramStartRow = 8;
+  const lastRow = statSheet.getLastRow();
+  const paramNames = statSheet.getRange(paramStartRow, 2, lastRow - paramStartRow + 1).getValues().flat();
+
+  const today = new Date();
+  const getWeekStart = (date) => {
+    const d = new Date(date);
+    d.setDate(d.getDate() - d.getDay() + 1);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  };
+
+  const formatDateShort = date => Utilities.formatDate(date, timezone, "dd");
+  const formatDateFull = date => Utilities.formatDate(date, timezone, "dd.MM.yy");
+  const getWeekLabel = (startDate) => {
+    const endDate = new Date(startDate);
+    endDate.setDate(startDate.getDate() + 6);
+    return `${formatDateShort(startDate)}–${formatDateFull(endDate)}`;
+  };
+  const applyWeekStyle = (cellRange, startDate) => {
+    cellRange.setFontWeight("bold");
+    const endDate = new Date(startDate);
+    endDate.setDate(startDate.getDate() + 6);
+    if (startDate.getMonth() !== endDate.getMonth()) {
+      cellRange.setBackground("#b6d7a8");
+    } else {
+      cellRange.setBackground(null);
+    }
+  };
+
+  const currentWeekStart = getWeekStart(today);
+  const checkIfEmptyLast3 = (paramList) => {
+    return paramList.every(param => {
+      const rowIndex = paramNames.findIndex(name => name === param.name);
+      if (rowIndex === -1) return false;
+      const row = paramStartRow + rowIndex;
+      const values = statSheet.getRange(row, 3, 1, 3).getValues()[0];
+      return values.every(cell => !cell);
+    });
+  };
+
+  const isFirstRun = checkIfEmptyLast3([...standardParams, ...top10Params]);
+  const fillWeeks = isFirstRun ? 16 : 1;
+
+  // Вставляем столбцы заранее
+  statSheet.insertColumnsBefore(3, fillWeeks);
+
+  const sourceData = sourceSheet.getDataRange().getValues();
+
+  for (let i = 0; i < fillWeeks; i++) {
+    const weekStart = new Date(currentWeekStart);
+    weekStart.setDate(weekStart.getDate() - i * 7);
+    const weekLabel = getWeekLabel(weekStart);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+
+    const col = 3 + i;
+    const headerCell = statSheet.getRange(7, col);
+    headerCell.setValue(weekLabel);
+    applyWeekStyle(headerCell, weekStart);
+
+    [...standardParams, ...top10Params].forEach(param => {
+      const rowIndex = paramNames.findIndex(name => name === param.name);
+      if (rowIndex === -1) return;
+      const row = paramStartRow + rowIndex;
+      let count = 0;
+
+      for (let r = 1; r < sourceData.length; r++) {
+        const line = sourceData[r];
+        const rawValue = line[getColIndex(param.column)];
+        let compareDate = line[getColIndex("H")];
+
+        if (standardParams.some(p => p.name === param.name)) {
+          compareDate = rawValue;
+          if (!(compareDate instanceof Date)) continue;
+        } else {
+          if (rawValue !== 1 && rawValue !== "1") continue;
+          if (!(compareDate instanceof Date)) continue;
+        }
+
+        const d = new Date(compareDate);
+        d.setHours(0, 0, 0, 0);
+        if (d >= weekStart && d <= weekEnd) {
+          count++;
+        }
+      }
+
+      const value = (top10Params.some(p => p.name === param.name) && count === 0) ? "нет инфы" : count;
+      statSheet.getRange(row, col).setValue(value);
+    });
+  }
+
+  function getColIndex(colLetter) {
+    return colLetter.charCodeAt(0) - 65;
+  }
+}
