@@ -1,0 +1,58 @@
+// === 📊 sendStatToTelegram_v1.1.0 [emoji+legend] ===
+// РАБОТАЕТ ПРОВЕРЕНО
+// Версии:
+// v1.1.0 [emoji+legend] — Смайлы в заголовках, короткая легенда
+// v1.0.9 и ниже — смотри историю
+
+function sendWeeklyStatsToTelegram() {
+  const TELEGRAM_TOKEN = '8136586676:AAHvXeM4ih9ECPdSwzGM5P0O1p2_GYb_iTk';
+  const TELEGRAM_CHAT_ID = '8003377702';
+
+  const sheet = SpreadsheetApp.getActive().getSheetByName("s5 Стата");
+  const weeks = sheet.getRange(7, 3, 1, 5).getValues()[0];
+
+  const params = {
+    "🔥": 10,
+    "✍️": 11,
+    "💻": 12,
+    "Я": 15,
+    "Я+2н": 16,
+    "G+м": 17
+  };
+
+  const dataByParam = {};
+  for (const [label, row] of Object.entries(params)) {
+    dataByParam[label] = sheet.getRange(row, 3, 1, 5).getValues()[0].map(v =>
+      (v === '' || v === 'нет инфы') ? 'x' : String(v)
+    );
+  }
+
+  const fixWeek = (val) => String(val).substring(0, 9);
+  const headers = Object.keys(params);
+
+  let msg = 'Недельный отчет:\n\n';
+  msg += 'Неделя | ' + headers.join(' | ') + '\n';
+
+  for (let i = 0; i < 5; i++) {
+    const week = fixWeek(weeks[i] || '');
+    const row = headers.map(h => dataByParam[h][i]).join(' | ');
+    msg += `${week} | ${row}\n`;
+  }
+
+  msg += `\n📘 Обозначения:\n🔥 — опубликовано\n✍️ — написано\n💻 — в работу`;
+
+  msg = `<pre>${msg}</pre>📎 <a href="https://docs.google.com/spreadsheets/d/1n3InvbH_nTghhPWpNUA6T0hSafVSlgW2XVmuL88EW1g/edit?gid=1655944420#gid=1655944420&range=A7">Открыть таблицу</a>`;
+
+  const payload = {
+    chat_id: TELEGRAM_CHAT_ID,
+    text: msg,
+    parse_mode: "HTML"
+  };
+
+  const url = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`;
+  UrlFetchApp.fetch(url, {
+    method: "post",
+    contentType: "application/json",
+    payload: JSON.stringify(payload)
+  });
+}
