@@ -1,0 +1,163 @@
+/**
+ * 📨 Telegram Notification Script
+ * ------------------------------------
+ * 📛 Версия: v2.3.1 — Лог добавляется в первую пустую строку в столбце S
+ * РАБОТАЕТ ПРОВЕРЕНО - НОВАЯ ЛОГИКА
+ * ▪ Проверяет вкладку "404 (не менять!)" начиная с 7-й строки.
+ * ▪ Если в колонке B есть ссылка (http) и колонка C пуста — отправляет сообщение в Telegram.
+ * ▪ Добавляет в сообщение:
+ *    — ссылку на текст (B)
+ *    — первую букву автора (F)
+ *    — ссылку на TopVisor (G, если есть)
+ *    — блок с позициями (H–M), где пустые/нулевые значения заменяются на x
+ * ▪ Формат сообщения:
+ *    🔥 New text:
+ *    📊 Позиции:
+ *    🔎 TopVisor:
+ *    👤 Кто разместил:
+ * ▪ Ставит отметку в колонке C — "Отправлено <дата время>"
+ * ▪ Логирует запуск во вкладку "Лог скриптов" от строки 7, столбцы M–Q
+ *
+ * 💬 Сделано в ChatGPT: https://chatgpt.com/c/67e2e09a-1b20-8010-8992-ecfebfcfe5c0
+ */
+
+const TELEGRAM_TOKEN = '8136586676:AAHvXeM4ih9ECPdSwzGM5P0O1p2_GYb_iTk';
+const TELEGRAM_CHAT_ID = '8003377702';
+
+function checkNewLinksAndNotify() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('404 (не менять!)');
+  const data = sheet.getRange(7, 1, sheet.getLastRow() - 6, 70).getValues();
+  const logRange = sheet.getRange(7, 19, sheet.getLastRow() - 6, 1).getValues().flat(); // Столбец S
+
+  let processedCount = 0;
+  let errors = [];
+
+  for (let i = 0; i < data.length; i++) {
+    const url = data[i][1];
+    const status = data[i][2];
+    const author = data[i][5];
+    const topvisor = data[i][6];
+
+    if (typeof url !== 'string' || !url.includes('http')) continue;
+
+    if (logRange.includes(url)) continue; // Уже отправлено
+
+    const authorInitial = author ? author.trim().charAt(0).toUpperCase() + '.' : 'Не указан';
+
+    let message = `*🔥 New text:*
+\`${url}\``;
+
+    const metrics = [
+      { label: 'ключ в топ-10 Я (ВЧ)', value: data[i][7] },
+      { label: 'ключ в топ-3 Я', value: data[i][8] },
+      { label: 'ключ в топ-10 Я', value: data[i][9] },
+      { label: 'ключей в топ-3 G', value: data[i][10] },
+      { label: 'ключей в топ-10 G', value: data[i][11] },
+      { label: 'всего ключей', value: data[i][12] },
+    ];
+
+    const filled = metrics.map(m => {
+      const isNumeric = !isNaN(m.value) && m.value !== '' && m.value !== null;
+      return { label: m.label, value: isNumeric && Number(m.value) > 0 ? m.value : 'x' };
+    });
+
+    message += `
+
+*📊 Позиции:*`;
+    filled.forEach((m, index) => {
+      message += `
+• ${m.value} — ${m.label}`;
+      if (index === 2 || index === 4) message += `
+`;
+    });
+
+    if (topvisor && typeof topvisor === 'string' && topvisor.includes('http')) {
+      message += `
+
+*🔎 TopVisor:* ${topvisor}`;
+    }
+
+    message += `
+
+*👤 Кто разместил:* ${authorInitial}`;
+
+    const result = sendTelegramMessage(message);
+
+    const now = new Date();
+    const formattedDate = Utilities.formatDate(now, Session.getScriptTimeZone(), 'dd.MM.yyyy');
+    const formattedTime = Utilities.formatDate(now, Session.getScriptTimeZone(), 'HH:mm:ss');
+
+    if (result.success) {
+      const logSheetValues = sheet.getRange(7, 19, sheet.getLastRow() - 6, 1).getValues();
+      let targetRow = 7;
+      for (let r = 0; r < logSheetValues.length; r++) {
+        if (!logSheetValues[r][0]) {
+          targetRow = r + 7;
+          break;
+        }
+      }
+      sheet.getRange(targetRow, 19).setValue(url);     // Столбец S
+      sheet.getRange(targetRow, 20).setValue(formattedDate); // Столбец T
+      sheet.getRange(targetRow, 21).setValue(formattedTime); // Столбец U
+      processedCount++;
+    } else {
+      const errorLog = `❌ Ошибка в строке ${i + 7}: ${url}
+Причина: ${result.error}`;
+      Logger.log(errorLog);
+      errors.push(result.error);
+    }
+  }
+
+  logScriptRun(processedCount, errors);
+}
+
+function sendTelegramMessage(message) {
+  const url = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`;
+  const payload = {
+    chat_id: TELEGRAM_CHAT_ID,
+    text: message,
+    parse_mode: 'Markdown',
+  };
+
+  const options = {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true,
+  };
+
+  try {
+    const response = UrlFetchApp.fetch(url, options);
+    const code = response.getResponseCode();
+    return code >= 200 && code < 300
+      ? { success: true }
+      : { success: false, error: `Код ответа Telegram: ${code}` };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
+function logScriptRun(count, errors) {
+  const logSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Лог скриптов');
+  const now = new Date();
+  const date = Utilities.formatDate(now, Session.getScriptTimeZone(), 'dd.MM.yyyy');
+  const time = Utilities.formatDate(now, Session.getScriptTimeZone(), 'HH:mm:ss');
+
+  const row = [[
+    date,
+    time,
+    errors.length ? '⚠️ С ошибками' : '✅ Успешно',
+    count ? `📤 Отправлено: ${count}` : '📭 Нет новых ссылок',
+    errors.join('; ')
+  ]];
+
+  const last = logSheet.getLastRow();
+  if (last >= 7) {
+    logSheet.insertRowBefore(7);
+  }
+  logSheet.getRange(7, 13, 1, row[0].length).setValues(row);
+}
+
+function setupTrigger() {
+  ScriptApp.newTrigger('checkNewLinksAndNotify').timeBased().everyHours(4).create();
+}
