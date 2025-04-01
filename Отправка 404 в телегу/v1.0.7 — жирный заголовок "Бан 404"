@@ -1,0 +1,84 @@
+/*
+v1.0.7 — жирный заголовок "Бан 404", добавлена справка и ссылка на ChatGPT
+Ссылка на чат: https://chatgpt.com/c/67ec0064-2280-8010-9a68-59dc2da1bc5b
+ПРОВЕРЕНО РАБОТАЕТ
+*/
+
+const TG_TOKEN_404 = '8136586676:AAHvXeM4ih9ECPdSwzGM5P0O1p2_GYb_iTk';
+const TG_CHAT_ID_404 = '8003377702';
+
+function checkFor404AndNotify() {
+  const sheet = SpreadsheetApp.getActive().getSheetByName('404 (не менять!)');
+  const data = sheet.getDataRange().getValues();
+
+  for (let i = 1; i < data.length; i++) {
+    const status = data[i][3]; // Столбец D
+
+    if (status === 404) {
+      const textId = escapeHtml(data[i][0]);   // Столбец A
+      const badLink = escapeHtml(data[i][1]);  // Столбец B
+      const author = escapeHtml(data[i][5]);   // Столбец F
+
+      const message = `
+🚨 <b>Бан 404</b>
+
+🆔 ID текста: ${textId}  
+👤 Разместил: ${author}
+
+🔗 ${badLink}
+      `.trim();
+
+      sendTelegramMessage404(message);
+    }
+  }
+}
+
+function sendTelegramMessage404(message) {
+  const url = `https://api.telegram.org/bot${TG_TOKEN_404}/sendMessage`;
+  const payload = {
+    chat_id: TG_CHAT_ID_404,
+    text: message,
+    parse_mode: 'HTML'
+  };
+
+  const options = {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(payload)
+  };
+
+  UrlFetchApp.fetch(url, options);
+}
+
+// 🔐 Экранирует специальные символы для HTML (иначе Telegram может выдать ошибку 400)
+function escapeHtml(text) {
+  if (!text) return '';
+  return text.toString()
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/*
+📚 СПРАВКА К СКРИПТУ
+
+Скрипт проходит по листу "404 (не менять!)" в Google Таблице и ищет строки,
+в которых в колонке D указано значение 404. Если находит — отправляет
+сообщение в Telegram с данными из строки.
+
+💬 Формат сообщения:
+- Заголовок "Бан 404" (жирный)
+- ID текста из колонки A
+- Имя разместившего (F)
+- Битая ссылка из колонки B
+
+📤 Сообщения отправляются каждый раз при запуске скрипта — даже если это та же строка.
+
+🛠 Настройки:
+- TG_TOKEN_404 — токен Telegram-бота
+- TG_CHAT_ID_404 — ID получателя (чат или пользователь)
+
+🚨 Важно: ссылка, имя и ID проходят экранирование спецсимволов, чтобы избежать ошибок Telegram.
+
+Последнее обновление: 01.04.2025
+*/
