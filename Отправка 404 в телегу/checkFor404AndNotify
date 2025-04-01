@@ -1,0 +1,44 @@
+const TELEGRAM_TOKEN = '8136586676:AAHvXeM4ih9ECPdSwzGM5P0O1p2_GYb_iTk';
+const TELEGRAM_CHAT_ID = '8003377702';
+
+function checkFor404AndNotify() {
+  const sheet = SpreadsheetApp.getActive().getSheetByName('404 (не менять!)');
+  const data = sheet.getDataRange().getValues();
+
+  for (let i = 1; i < data.length; i++) {
+    const status = data[i][3]; // Столбец D
+
+    if (status === 404) {
+      const textId = data[i][0];   // Столбец A
+      const badLink = data[i][1];  // Столбец B
+      const author = data[i][5];   // Столбец F
+
+      const message = `
+🚨 Обнаружена ошибка 404
+
+🆔 ID текста: ${textId}  
+🔗 Битая ссылка: ${badLink}  
+👤 Разместил: ${author}
+      `.trim();
+
+      sendTelegramMessage(message);
+    }
+  }
+}
+
+function sendTelegramMessage(message) {
+  const url = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`;
+  const payload = {
+    chat_id: TELEGRAM_CHAT_ID,
+    text: message,
+    parse_mode: 'Markdown'
+  };
+
+  const options = {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(payload)
+  };
+
+  UrlFetchApp.fetch(url, options);
+}
